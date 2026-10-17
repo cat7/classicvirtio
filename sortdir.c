@@ -56,21 +56,23 @@ enum {
 // Hash is an arbitrary int used to determine how "tall" to insert the element
 // (A macro is used to avoid coupling to the exact structure X.
 // It just needs to contain this element: struct {struct X *l, *r;} link[MAX];)
-#define SKIPLIST_INSERT(right, new, hash) do { \
+// rights[d] is the element just right of the insertion point at level d
+// (an element only exists at the levels up to its own height)
+#define SKIPLIST_INSERT(rights, new, hash) do { \
 	int maxlevel = sizeof (new->link) / sizeof (new->link[0]); \
 	int d = 0; \
 	do { \
-		new->link[d].r = right; \
-		new->link[d].l = right->link[d].l; \
-		right->link[d].l->link[d].r = new; \
-		right->link[d].l = new; \
+		new->link[d].r = rights[d]; \
+		new->link[d].l = rights[d]->link[d].l; \
+		rights[d]->link[d].l->link[d].r = new; \
+		rights[d]->link[d].l = new; \
 		d++; \
 	} while (d<maxlevel && (hash & 1<<d)); \
 } while (0)
 
 #define SKIPLIST_DELETE(el) do { \
 	int maxlevel = sizeof (el->link) / sizeof (el->link[0]); \
-	for (int d=0; d<maxlevel; d++) { \
+	for (int d=0; d<maxlevel && el->link[d].l; d++) { \
 		el->link[d].l->link[d].r = el->link[d].r; \
 		el->link[d].r->link[d].l = el->link[d].l; \
 		el->link[d].r = el->link[d].l = NULL; \
@@ -187,6 +189,7 @@ static void populate(const char *ignore, bool dirOK, bool *isComplete) {
 
 			// search the skiplist for where to insert
 			struct leader *right = &rightmost;
+			struct leader *rights[POWER];
 			for (int d=POWER-1; d>=0; d--) {
 				for (;;) {
 					struct leader *stepleft = right->link[d].l;
@@ -196,13 +199,14 @@ static void populate(const char *ignore, bool dirOK, bool *isComplete) {
 					right = stepleft;
 					if (right == &leftmost) goto skipFile;
 				}
+				rights[d] = right;
 			}
 
 			if (nlead < sizeof ldboard/sizeof *ldboard) { // empty slots available, use one
 				struct leader *el = &ldboard[nlead++];
 				el->cnid = cnid;
 				strcpy(el->name, name);
-				SKIPLIST_INSERT(right, el, el->cnid);
+				SKIPLIST_INSERT(rights, el, el->cnid);
 				goto skipFile;
 			}
 
@@ -218,8 +222,11 @@ static void populate(const char *ignore, bool dirOK, bool *isComplete) {
 				goto skipFile;
 			}
 
+			for (int d=0; d<POWER; d++) {
+				if (rights[d] == el) rights[d] = el->link[d].r;
+			}
 			SKIPLIST_DELETE(el);
-			SKIPLIST_INSERT(right, el, el->cnid);
+			SKIPLIST_INSERT(rights, el, el->cnid);
 		skipFile:;
 		}
 	}
