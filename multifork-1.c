@@ -35,6 +35,7 @@ enum {
 	RFORKFID,                  // resource fork open file
 	PARENTFID1,                // scratch for walking to parent
 	TMPFID1,                   // scratch for delete operations
+	LISTFID1,                  // scratch for listing a folder being deleted
 	DIRTYFLAG = 1,
 };
 
@@ -213,17 +214,24 @@ static void flush_rfork(struct MyFCB *fcb) {
 }
 
 static int close1(struct MyFCB *fcb) {
-	if ((fcb->fcbFlags & fcbResourceMask) && (fcb->mfFlags & DIRTYFLAG)) {
-		// Clear dirty on all FCBs for this file
-		for (struct MyFCB *i = UnivFirst(fcb->fcbFlNm, true); i != NULL; i = UnivNext(fcb)) {
-			i->mfFlags &= ~DIRTYFLAG;
-		}
-		flush_rfork(fcb);
+	if (fcb->fcbFlags & fcbResourceMask) {
+		// fcb is already delisted, so any FCB found is another opener
+		bool last = UnivFirst(fcb->fcbFlNm, true) == NULL;
 
-		// Clean up the cache file
-		char path[20];
-		sprintf(path, "rf-%08lx", (long)fcb->fcbFlNm);
-		Unlinkat9(DOTDIRFID, path, 0);
+		if (fcb->mfFlags & DIRTYFLAG) {
+			// Clear dirty on all FCBs for this file
+			for (struct MyFCB *i = UnivFirst(fcb->fcbFlNm, true); i != NULL; i = UnivNext(i)) {
+				i->mfFlags &= ~DIRTYFLAG;
+			}
+			flush_rfork(fcb);
+		}
+
+		// The cache file is only needed while the fork is open
+		if (last) {
+			char path[20];
+			sprintf(path, "rf-%08lx", (long)fcb->fcbFlNm);
+			Unlinkat9(DOTDIRFID, path, 0);
+		}
 	}
 
 	return Clunk9(fidof(fcb));
@@ -368,11 +376,50 @@ static int move1(uint32_t fid1, const char *name1, uint32_t fid2, const char *na
 	return Renameat9(fid1, name1, fid2, name2);
 }
 
+// Dot-names are hidden from the guest (e.g. .DS_Store), so a folder that
+// holds them could never be emptied. Remove them from folder @dirfid.
+// Hidden subfolders go only if empty. Returns the number removed.
+static int purge_hidden1(uint32_t dirfid) {
+	enum {BATCH = 16};
+	char names[BATCH][MAXNAME];
+	char types[BATCH];
+	int n = 0, removed = 0;
+	char buf[4096];
+	uint64_t offset = 0;
+	uint32_t count = 0;
+
+	WalkPath9(dirfid, LISTFID1, "");
+	if (Lopen9(LISTFID1, O_RDONLY|O_DIRECTORY, NULL, NULL)) {
+		Clunk9(LISTFID1);
+		return 0;
+	}
+	while (n < BATCH && !Readdir9(LISTFID1, offset, sizeof buf, &count, buf) && count > 0) {
+		char *p = buf;
+		while (n < BATCH && p < buf + count) {
+			DirRecord9(&p, NULL, &offset, &types[n], names[n]);
+			if (names[n][0] != '.' || !strcmp(names[n], ".") || !strcmp(names[n], "..")) continue;
+			n++;
+		}
+	}
+	Clunk9(LISTFID1);
+
+	for (int i=0; i<n; i++) {
+		if (!Unlinkat9(dirfid, names[i], types[i] == 4 ? 0x200 /*AT_REMOVEDIR*/ : 0)) {
+			removed++;
+		}
+	}
+	return removed;
+}
+
 static int del1(uint32_t fid, const char *name, bool isdir) {
 	WalkPath9(fid, TMPFID1, "..");
 
 	if (isdir) {
-		return Unlinkat9(TMPFID1, name, 0x200 /*AT_REMOVEDIR*/);
+		int err = Unlinkat9(TMPFID1, name, 0x200 /*AT_REMOVEDIR*/);
+		while (err == ENOTEMPTY && purge_hidden1(fid) > 0) {
+			err = Unlinkat9(TMPFID1, name, 0x200 /*AT_REMOVEDIR*/);
+		}
+		return err;
 	} else {
 		// Xattrs are deleted automatically with the file
 		return Unlinkat9(TMPFID1, name, 0);
