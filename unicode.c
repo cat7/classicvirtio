@@ -200,7 +200,9 @@ long utf8char(unsigned char roman) {
 static int toMacRoman(const char **utf8signed) {
 	int nbytes, roman;
 
-	const unsigned char **utf8 = (const unsigned char **)utf8signed;
+	// Advance a local copy: writing through a cast char ** breaks aliasing
+	const unsigned char *u = (const unsigned char *)*utf8signed;
+	const unsigned char **utf8 = &u;
 
 	if ((*utf8)[0]=='A' && (*utf8)[1]==0xcc && (*utf8)[2]==0x88) {
 		// LATIN CAPITAL LETTER A + COMBINING DIAERESIS
@@ -936,6 +938,7 @@ static int toMacRoman(const char **utf8signed) {
 		roman = -1;
 	}
 
-	(*utf8) += nbytes;
+	u += nbytes;
+	*utf8signed = (const char *)u;
 	return roman;
 }
