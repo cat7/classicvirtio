@@ -1181,6 +1181,13 @@ static OSErr fsRename(struct IOParam *pb) {
 		return dupFNErr;
 	}
 	Clunk9(FID2);
+
+	// Linux rename() cannot replace a non-directory with a directory,
+	// so remove the placeholder file before renaming a directory.
+	if (IsDir(cnid)) {
+		Unlinkat9(FID1, newNameU, 0);
+	}
+
 	if (MF.Move(FID1, name, FID1, newNameU)) {
 		return ioErr; // really should've worked!
 	}
@@ -1224,6 +1231,12 @@ static OSErr fsCatMove(struct CMovePBRec *pb) {
 		return ioErr;
 	}
 	Clunk9(FID3);
+
+	// Linux rename() cannot replace a non-directory with a directory,
+	// so remove the placeholder file before moving a directory.
+	if (IsDir(cnid1)) {
+		Unlinkat9(FID2, name, 0);
+	}
 
 	// Navigate "up" a level because 9P expects the parent fid
 	WalkPath9(FID1, FID1, "..");
