@@ -781,9 +781,10 @@ static OSErr fsMakeFSSpec(struct HIOParam *pb) {
 	if (!IsErr(cnid)) {
 		// The target exists
 		if (cnid == 2) {
+			// The root directory: parent fsRtParID, named after the volume
 			spec->vRefNum = vcb.vcbVRefNum;
-			spec->parID = 2;
-			spec->name[0] = 0;
+			spec->parID = 1;
+			pstrcpy(spec->name, vcb.vcbVN);
 		} else {
 			spec->vRefNum = vcb.vcbVRefNum;
 			spec->parID = parent;

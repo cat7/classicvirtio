@@ -16,6 +16,11 @@ volatile char *virtioSerialRegister(void) {
 		return NULL;
 	}
 
+	// Nothing else enables this device: ROM firmware leaves decode off
+	uint16_t cmd;
+	ExpMgrConfigReadWord(&dev, (LogicalAddress)4, &cmd);
+	ExpMgrConfigWriteWord(&dev, (LogicalAddress)4, cmd | 2);
+
 	void *bars[6];
 	findLogicalBARs(&dev, bars);
 
