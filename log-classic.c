@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "slotbase.h"
 #include "structs-mmio.h"
 
 volatile char *virtioSerialRegister(void) {
@@ -10,9 +11,14 @@ volatile char *virtioSerialRegister(void) {
 		if (SRsrcInfo(&sp)) continue;
 		sp.spID = 2/*sRsrcName*/;
 		if (SFindStruct(&sp)) continue;
-		if (memcmp(sp.spsPointer, "Virtio", 6)) continue;
+		// Through the Slot Manager: in 24-bit mode the ROM is out of reach
+		char name[6];
+		sp.spSize = sizeof name;
+		sp.spResult = (long)name;
+		if (SReadStruct(&sp)) continue;
+		if (memcmp(name, "Virtio", 6)) continue;
 
-		void *base = (void *)0xf0000000 + ((long)slot << 24);
+		void *base = (void *)SlotBase(slot);
 		for (int dev=0; dev<32; dev++) {
 			struct virtioMMIO *device = base + 0x200 + 0x200*dev;
 			if (device->magicValue==0x74726976 && device->version==2 && device->deviceID==3) {

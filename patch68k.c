@@ -18,7 +18,7 @@
 struct block {
 	void *original;
 	long vector;
-	unsigned char code[128];
+	unsigned char code[256]; // trimmed to the real size by SetPtrSize below
 };
 
 static int hex(char c) {

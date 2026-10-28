@@ -23,6 +23,7 @@
 	.set majorBase, 12
 	.set majorLength, 13
 	.set sRsrcCicn, 15
+	.set StartupZoneSize, 0x60000 /* see StubDriver */
 	.set boardId, 32
 	.set primaryInit, 34
 	.set vendorInfo, 36
@@ -103,19 +104,16 @@ SEBlock.size:
 /* The SlotMgr helpfully copies "slotExec" code blocks into scratch RAM to run.
  * Jump back to ROM so our code can take valid function pointers from itself.
  */
-	.macro  SlotExecROMStub
-	.long   20f-.                      /* my length */
+	.macro  SlotExecROMStub end
+	.long   \end-.                     /* my length: the whole block */
 	.long   0x02010000                 /* struct version / 68000 / reserved */
 	.long   4                          /* offset to code (i.e. right here) */
-	/* The code and the drivers run from the ROM at 32-bit addresses.
-	 * In 24-bit mode (always on the Mac II family at this point, or with
-	 * 32-bit addressing off) report a failure: the Slot Manager then
-	 * leaves the card alone for this boot instead of the Mac hanging. */
+	/* In 24-bit mode (always on the Mac II family at this point, or with
+	 * 32-bit addressing off) the ROM, at the top of the slot, is out of
+	 * reach: run the Slot Manager's RAM copy of this block instead. The
+	 * code is position-independent and keeps no pointers to itself. */
 	tst.b   0x0cb2                     /* MMU32Bit */
-	bne.s   10f
-	move.w  #-1,2(%a0)                 /* seStatus < 0 */
-	rts
-10:
+	beq.s   20f
 	clr.l   %d0
 	move.b  (%a0),%d0                  /* get seSlot */
 	ror.l   #8,%d0                     /* move to 0F000000 position */
@@ -140,7 +138,7 @@ SEBlock.size:
 	.endm
 
 
-	.macro  StubDriver myname
+	.macro  StubDriver myname, elf, elfend, firstid, vtype
 	.long   69f-.
 60:
 	.short  0x4f00              /* needtime + all calls enabled */
@@ -168,18 +166,125 @@ SEBlock.size:
 	.short  0x4afc, 0x4afc, 0x4afc, 0x4afc, 0x4afc, 0x4afc
 
 66:
+	moveq   #0,%d4              /* no private heap (see below) */
+	move.l  %a0,%a3             /* keep the PB and DCE for the driver */
+	move.l  %a1,%a4
+
+	/* Refuse to open without a device for this sResource: the Nth
+	 * sResource of a type drives the Nth device of that type. PrimaryInit
+	 * deletes the spare sResources, but on the Mac II family ROMs they
+	 * stay (seen on the IIcx). The registers are at $Fs000000 in 32-bit mode
+	 * and at $s00000 in 24-bit mode; the first device's magic number
+	 * tells which. They are little-endian, hence the byte order here. */
+	moveq   #0,%d0
+	move.b  40(%a4),%d0         /* slot */
+	move.l  %d0,%d1
+	ror.l   #8,%d1
+	add.l   #0xf0000000,%d1
+	move.l  %d1,%a0
+	cmp.l   #0x76697274,0x200(%a0) /* "virt" */
+	beq.s   76f
+	swap    %d0
+	lsl.l   #4,%d0
+	move.l  %d0,%a0             /* $s00000 */
+76:
+	lea     0x200(%a0),%a0      /* the first of 32 devices */
+	moveq   #31,%d2
+	moveq   #0,%d1              /* devices of our type */
+77:
+	cmp.l   #0x76697274,(%a0)   /* magic, version and ID, in that order */
+	bne.s   78f
+	cmp.l   #0x02000000,4(%a0)
+	bne.s   78f
+	cmp.l   #(\vtype)<<24,8(%a0)
+	bne.s   78f
+	addq.l  #1,%d1
+78:
+	lea     0x200(%a0),%a0
+	dbf     %d2,77b
+	moveq   #0,%d0
+	move.b  41(%a4),%d0         /* sResource ID */
+	sub.l   #\firstid,%d0
+	cmp.l   %d1,%d0
+	blt.s   79f
+	moveq   #-23,%d0            /* openErr */
+	rts
+79:
+	tst.b   0x0cb2              /* MMU32Bit */
+	jbeq    72f
+
 	moveq   #56/4-1,%d0         /* make an SpBlock */
 67:
 	clr.l   -(%sp)
 	dbf     %d0,67b
 	move.l  %sp,%a0
-	move.b  40(%a1),49(%a0)     /* slot number into spBlock */
-	move.b  41(%a1),50(%a0)     /* sResource number into spBlock */
+	move.b  40(%a4),49(%a0)     /* slot number into spBlock */
+	move.b  41(%a4),50(%a0)     /* sResource number into spBlock */
 
 	moveq   #11,%d0
 	.short  0xa06e              /* call SGetSRsrc */
 	move.l  4(%a0),%a2          /* this is the sResource pointer in ROM */
 	lea     56(%sp),%sp
+	jbra    70f
+
+	/* In 24-bit mode the ROM, at the top of the slot, is out of reach:
+	 * copy the driver into RAM and run it there. The copy is done in
+	 * 32-bit mode with interrupts off. (SGetBlock would do it for us,
+	 * but copies at most 64K.)
+	 * During startup, while the system heap is still the only heap, the
+	 * boot code keeps its stack just above that heap, so the heap must
+	 * not grow by much: the copy, and a private heap that stands in for
+	 * the system heap while the driver opens (it allocates ~300K), go
+	 * below BufPtr at the top of RAM instead. */
+72:
+	move.l  0x02a6,%d1          /* SysZone */
+	cmp.l   0x02aa,%d1          /* ApplZone */
+	jbne    73f
+	move.l  0x010c,%d1          /* BufPtr */
+	sub.l   #\elfend-\elf,%d1
+	and.w   #0xfff0,%d1
+	move.l  %d1,%a2             /* the copy, at the top */
+	sub.l   #StartupZoneSize,%d1
+	move.l  %d1,0x010c          /* new BufPtr */
+	move.l  %d1,%d4             /* the private heap, below the copy */
+	move.l  0x0118,-(%sp)       /* TheZone, which InitZone changes */
+	clr.l   -(%sp)              /* pGrowZone */
+	move.w  #16,-(%sp)          /* cMoreMasters */
+	move.l  %a2,-(%sp)          /* limitPtr */
+	move.l  %d4,-(%sp)          /* startPtr */
+	move.l  %sp,%a0
+	.short  0xa019              /* InitZone */
+	lea     14(%sp),%sp
+	move.l  (%sp)+,0x0118
+	jbra    74f
+73:
+	move.l  #\elfend-\elf,%d0
+	.short  0xa51e              /* NewPtrSys */
+	move.l  %a0,%d0
+	jbeq    71f
+	move.l  %a0,%a2             /* the copy */
+74:
+	clr.l   %d0
+	move.b  40(%a4),%d0         /* slot */
+	ror.l   #8,%d0
+	add.l   #\elf-ROMEND+0xf1000000,%d0 /* the driver in ROM, 32-bit */
+	move.l  %d0,%d2
+	move.w  %sr,-(%sp)
+	ori.w   #0x0700,%sr
+	moveq   #1,%d0
+	.short  0xa05d              /* SwapMMUMode to 32-bit, old mode in d0 */
+	move.b  %d0,%d3
+	move.l  %d2,%a0
+	move.l  %a2,%a1
+	move.l  #\elfend-\elf,%d0
+	.short  0xa02e              /* BlockMove, which also keeps the caches right */
+	move.b  %d3,%d0
+	.short  0xa05d              /* SwapMMUMode back */
+	move.w  (%sp)+,%sr
+
+70:
+	move.l  %a3,%a0
+	move.l  %a4,%a1
 
 68:
 	cmp.w   #0x6004,(%a2)+      /* scan for magic number inside ELF code */
@@ -188,7 +293,17 @@ SEBlock.size:
 	bne.s   68b
 	cmp.w   #0x656e,(%a2)+
 	bne.s   68b
-	jmp     (%a2)
+	move.l  0x02a6,-(%sp)       /* SysZone */
+	tst.l   %d4
+	beq.s   75f
+	move.l  %d4,0x02a6          /* the private heap stands in for it */
+75:
+	jsr     (%a2)               /* the driver's Open */
+	move.l  (%sp)+,0x02a6
+	rts
+71:
+	moveq   #-108,%d0           /* memFullErr: fail the Open */
+	rts
 69:
 	.endm
 
@@ -240,9 +355,11 @@ BoardName:
 	.asciz "Virtio bus"
 	.align 2
 PrimaryInitRec:
-	SlotExecROMStub
+	SlotExecROMStub PrimaryInitEnd
 	SlotExecCShim
 	.incbin "build/classic/standalone-primaryinit"
+	.align 2
+PrimaryInitEnd:
 
 VendorInfoRec:
 	OSLstEntry vendorId, VendorId
@@ -332,8 +449,11 @@ Resource9P:
 	OSLstEntry sCPU_68020, 4$
 	DatLstEntry endOfList, 0
 4$:
-	StubDriver Virtio9P
+	StubDriver Virtio9P, 5$, 6$, 128, 9
+5$:
 	.incbin "build/classic/drvr-9p.elf"
+	.align 2
+6$:
 
 ResourceBlock:
 	OSLstEntry sRsrcType, 1$
@@ -355,8 +475,11 @@ ResourceBlock:
 	OSLstEntry sCPU_68020, 4$
 	DatLstEntry endOfList, 0
 4$:
-	StubDriver VirtioBlock
+	StubDriver VirtioBlock, 5$, 6$, 160, 2
+5$:
 	.incbin "build/classic/drvr-block.elf"
+	.align 2
+6$:
 
 ResourceInput:
 	OSLstEntry sRsrcType, 1$
@@ -377,13 +500,18 @@ ResourceInput:
 	OSLstEntry sCPU_68020, 4$
 	DatLstEntry endOfList, 0
 4$:
-	StubDriver VirtioInput
+	StubDriver VirtioInput, 5$, 6$, 192, 18
+5$:
 	.incbin "build/classic/drvr-input.elf"
+	.align 2
+6$:
 
 BootRec:
-	SlotExecROMStub
+	SlotExecROMStub BootRecEnd
 	SlotExecCShim
 	.incbin "build/classic/standalone-boot"
+	.align 2
+BootRecEnd:
 
 /* Pad so that, after the header, this ROM is a multiple of 4K */
 /* Works around a suspected QEMU bug: */

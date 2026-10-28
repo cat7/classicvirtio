@@ -12,6 +12,7 @@
 #include "cleanup.h"
 #include "device.h"
 #include "panic.h"
+#include "slotbase.h"
 #include "structs-mmio.h"
 #include "virtqueue.h"
 
@@ -34,9 +35,12 @@ static void whoami(short refNum);
 void *VConfig;
 uint16_t VMaxQueues;
 
-static int slot; // these three variables are set by whoami()
-static volatile struct virtioMMIO *device;
-static volatile struct goldfishPIC *pic;
+static int slot; // these two variables are set by whoami()
+static long devOffset; // of our virtio device in the slot, 0 until known
+
+// The registers, at the address that works in the current addressing mode
+#define device ((volatile struct virtioMMIO *)(SlotBase(slot) + devOffset))
+#define pic ((volatile struct goldfishPIC *)SlotBase(slot)) // the 32 virtio devices share a goldfish
 
 // Coexists in a queue with all the Virtio devices on this same board
 static struct SlotIntQElement slotInterrupt = {
@@ -124,7 +128,7 @@ void VDriverOK(void) {
 }
 
 void VFail(void) {
-	if (device != NULL) {
+	if (devOffset != 0) {
 		SynchronizeIO();
 		device->status = 0x80;
 		SynchronizeIO();
@@ -205,8 +209,6 @@ static void whoami(short refNum) {
 	slot = 255 & (*(AuxDCEHandle)GetDCtlEntry(refNum))->dCtlSlot;
 	int resNum = 255 & (*(AuxDCEHandle)GetDCtlEntry(refNum))->dCtlSlotId;
 
-	pic = (struct goldfishPIC *)(0xf0000000UL + ((long)slot<<24)); // the 32 virtio devices share a goldfish
-
 	struct SpBlock sp = {.spSlot=slot, .spID=resNum};
 	SGetSRsrc(&sp);
 	int type = 255 & sp.spDrvrHW; // the last field of "sRsrcType" in the declaration ROM
@@ -223,7 +225,7 @@ static void whoami(short refNum) {
 	// Then which of the 32 virtio devices does that correspond with?
 	// Count device types (e.g. 3 of Block, 1 of Input)
 	for (int i=31; i>=0; i--) { // reverse-iterate to match command line order
-		device = (struct virtioMMIO *)(0xf0000000UL + ((long)slot<<24) + 0x200 + 0x200*i);
+		devOffset = 0x200 + 0x200*i;
 
 		// Spec says these three registers MUST be read in this order at init time
 		if (device->magicValue != 0x74726976) continue;
@@ -237,5 +239,6 @@ static void whoami(short refNum) {
 		}
 		return; // got it
 	}
+	devOffset = 0;
 	SysError(0xd0d0);
 }

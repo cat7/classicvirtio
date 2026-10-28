@@ -10,6 +10,7 @@
 #include <Devices.h>
 #include <Errors.h>
 #include <Memory.h>
+#include <OSUtils.h>
 #include <Slots.h>
 #include <Types.h>
 
@@ -43,7 +44,11 @@ asm (
 	".globl  asmClose                   \n"
 	"asmClose:                          \n"
 	"move.l  20(%a1),%a5                \n" // storage handle
-	"move.l  (%a5),%a5                  \n" // storage pointer
+	"move.l  %d0,-(%sp)                 \n"
+	"move.l  (%a5),%d0                  \n" // storage pointer...
+	"and.l   0x31a,%d0                  \n" // ...without the 24-bit Memory Manager flags (Lo3Bytes)
+	"move.l  %d0,%a5                    \n"
+	"move.l  (%sp)+,%d0                 \n"
 	"move.l  %a1,-(%sp)                 \n" // argument
 	"bsr.l   cClose                     \n" // low-level C routine (i.e. in this file)
 	"addq    #4,%sp                     \n"
@@ -53,7 +58,11 @@ asm (
 	".globl asmPrime                    \n"
 	"asmPrime:                          \n"
 	"move.l  20(%a1),%a5                \n" // storage handle
-	"move.l  (%a5),%a5                  \n" // storage pointer
+	"move.l  %d0,-(%sp)                 \n"
+	"move.l  (%a5),%d0                  \n" // storage pointer...
+	"and.l   0x31a,%d0                  \n" // ...without the 24-bit Memory Manager flags (Lo3Bytes)
+	"move.l  %d0,%a5                    \n"
+	"move.l  (%sp)+,%d0                 \n"
 	"move.w  6(%a0),%d3                 \n" // save trap number (survives C call)
 	"move.l  %a1,%a2                    \n" // save DCE address (survives C call)
 	"move.l  %a0,-(%sp)                 \n" // PB argument
@@ -79,7 +88,11 @@ asm (
 	".globl asmCtl                      \n"
 	"asmCtl:                            \n"
 	"move.l  20(%a1),%a5                \n" // storage handle
-	"move.l  (%a5),%a5                  \n" // storage pointer
+	"move.l  %d0,-(%sp)                 \n"
+	"move.l  (%a5),%d0                  \n" // storage pointer...
+	"and.l   0x31a,%d0                  \n" // ...without the 24-bit Memory Manager flags (Lo3Bytes)
+	"move.l  %d0,%a5                    \n"
+	"move.l  (%sp)+,%d0                 \n"
 	"move.w  6(%a0),%d3                 \n" // save trap number (survives C call)
 	"move.l  %a1,%a2                    \n" // save DCE address (survives C call)
 	"move.l  %a0,-(%sp)                 \n" // PB argument
@@ -90,7 +103,11 @@ asm (
 	".globl asmStatus                   \n"
 	"asmStatus:                         \n"
 	"move.l  20(%a1),%a5                \n" // storage handle
-	"move.l  (%a5),%a5                  \n" // storage pointer
+	"move.l  %d0,-(%sp)                 \n"
+	"move.l  (%a5),%d0                  \n" // storage pointer...
+	"and.l   0x31a,%d0                  \n" // ...without the 24-bit Memory Manager flags (Lo3Bytes)
+	"move.l  %d0,%a5                    \n"
+	"move.l  (%sp)+,%d0                 \n"
 	"move.w  6(%a0),%d3                 \n" // save trap number (survives C call)
 	"move.l  %a1,%a2                    \n" // save DCE address (survives C call)
 	"move.l  %a0,-(%sp)                 \n" // PB argument
@@ -131,7 +148,7 @@ void *ramDataSegment(AuxDCE *dce) {
 	dce->dCtlStorage = NewHandleSysClear(dataseg->p_memsz);
 	if (dce->dCtlStorage == NULL) SysError(0x0707);
 	HLock(dce->dCtlStorage);
-	newdata = *dce->dCtlStorage;
+	newdata = StripAddress(*dce->dCtlStorage); // no 24-bit flags in our pointers
 	BlockMoveData((char *)elf + dataseg->p_offset, newdata, dataseg->p_filesz);
 
 	// Hand-edit suspected pointers in the data segment (it has come to this)

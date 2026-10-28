@@ -8,11 +8,12 @@
 
 #include <stdint.h>
 
+#include "slotbase.h"
 #include "structs-mmio.h"
 
 // Must be the first function in the file
 void exec(struct SEBlock *pb) {
-	void *base = (void *)0xf0000000 + ((long)pb->seSlot << 24);
+	void *base = (void *)SlotBase(pb->seSlot);
 
 	char typeCounts[256] = {};
 
