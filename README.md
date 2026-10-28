@@ -28,6 +28,12 @@ Then:
 
 	-device nubus-virtio-mmio,romfile=/PATH/TO/classicvirtio/build/classic/declrom
 
+On the LC 475 of https://github.com/cat7/m68k-rom (q700 branch), whose
+only slot is the processor-direct slot, one card carries both the
+Ethernet and the virtio devices:
+
+	-device mac-pds-ethernet-virtio,netdev=net0,romfile=/PATH/TO/classicvirtio/build/classic/declrom-pds
+
 Tablet input
 ============
 

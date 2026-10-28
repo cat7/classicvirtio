@@ -48,6 +48,10 @@
 	.set typeDesk, 2
 	.set drSwMacCPU, 0
 	.set catCPU, 10
+	.set catNetwork, 4
+	.set typeEthernet, 1
+	.set drSwApple, 1
+	.set picOffset, 128 /* board sResource: where the goldfish PIC is, if not at +0 */
 	/* SpBlock; parameter block for Slot Manager routines */
 	.struct 0
 spResult: .space 4
@@ -334,6 +338,10 @@ OSLstEntry resNum, ResourceInput
 .set resNum, resNum+1
 .endr
 
+.ifdef PDS_ETHERNET
+	OSLstEntry 240, ResourceEthernet
+.endif
+
 	DatLstEntry endOfList, 0
 
 /* Information applying to the "physical" board */
@@ -342,9 +350,16 @@ BoardResource:
 	OSLstEntry sRsrcName, BoardName
 	OSLstEntry sRsrcIcon, Icon
 	OSLstEntry sRsrcCicn, Cicn
+.ifdef PDS_ETHERNET
+	DatLstEntry boardId, 93 /* Mac OS then uses its "Sonic 16" Ethernet driver */
+.else
 	DatLstEntry boardId, 0x9545
+.endif
 	OSLstEntry primaryInit, PrimaryInitRec
 	OSLstEntry vendorInfo, VendorInfoRec
+.ifdef PDS_ETHERNET
+	DatLstEntry picOffset, 0x100 /* the SONIC's registers are at +0 */
+.endif
 	DatLstEntry endOfList, 0
 BoardTypeRec:
 	.short catBoard /* Category: Board! */
@@ -352,7 +367,11 @@ BoardTypeRec:
 	.short 0 /* DrvrSw: 0, because it's a board */
 	.short 0 /* DrvrHw: 0, because... it's a board */
 BoardName:
+.ifdef PDS_ETHERNET
+	.asciz "Virtio bus and Ethernet"
+.else
 	.asciz "Virtio bus"
+.endif
 	.align 2
 PrimaryInitRec:
 	SlotExecROMStub PrimaryInitEnd
@@ -505,6 +524,26 @@ ResourceInput:
 	.incbin "build/classic/drvr-input.elf"
 	.align 2
 6$:
+
+/* The LC processor-direct slot card with Ethernet: QEMU's
+ * mac-pds-ethernet-virtio. Its SONIC and address PROM are where Apple's
+ * "Sonic 16" driver expects them (registers at +0, PROM at +$40000); the
+ * virtio devices stay at +$200, and the PIC moves to +$100. */
+.ifdef PDS_ETHERNET
+ResourceEthernet:
+	OSLstEntry sRsrcType, 1$
+	OSLstEntry sRsrcName, 2$
+	DatLstEntry sRsrcHWDevId, 1
+	DatLstEntry endOfList, 0
+1$:
+	.short catNetwork
+	.short typeEthernet
+	.short drSwApple
+	.short 0x0119
+2$:
+	.asciz "Network_Ethernet_SONIC"
+	.align 2
+.endif
 
 BootRec:
 	SlotExecROMStub BootRecEnd

@@ -4,7 +4,7 @@
 # Build the drivers (PPC and 68k) with:
 #     PATH=Retro68-build/toolchain/bin make
 all: classic ndrv build/test
-classic: build/classic/declrom
+classic: build/classic/declrom build/classic/declrom-pds
 ndrv: build/ndrv/ndrvloader
 
 # Tell make not to delete the intermediate files
@@ -48,6 +48,16 @@ build/classic/declrom: declrom.s \
 	m68k-apple-macos-as -o build/classic/declrom.o declrom.s
 	m68k-apple-macos-ld -o build/classic/declrom.elf build/classic/declrom.o
 	m68k-apple-macos-objcopy -O binary -j .text build/classic/declrom.elf $@
+	python3 scripts/calculatecrc.py $@
+
+# The same for the LC processor-direct slot card with Ethernet:
+#     qemu-system-m68k -M lc475 -device mac-pds-ethernet-virtio,romfile=build/classic/declrom-pds
+build/classic/declrom-pds: declrom.s \
+		$(patsubst %,build/classic/drvr-%.elf,$(DEVICES_CLASSIC)) \
+		$(patsubst standalone-%.c,build/classic/standalone-%,$(wildcard standalone-*.c))
+	m68k-apple-macos-as --defsym PDS_ETHERNET=1 -o build/classic/declrom-pds.o declrom.s
+	m68k-apple-macos-ld -o build/classic/declrom-pds.elf build/classic/declrom-pds.o
+	m68k-apple-macos-objcopy -O binary -j .text build/classic/declrom-pds.elf $@
 	python3 scripts/calculatecrc.py $@
 
 # The standalone functions built using different compiler options (PC-relative addressing FYI)

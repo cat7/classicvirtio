@@ -37,15 +37,19 @@ uint16_t VMaxQueues;
 
 static int slot; // these two variables are set by whoami()
 static long devOffset; // of our virtio device in the slot, 0 until known
+static long picOffset; // of the goldfish PIC, from the declaration ROM
 
 // The registers, at the address that works in the current addressing mode
 #define device ((volatile struct virtioMMIO *)(SlotBase(slot) + devOffset))
-#define pic ((volatile struct goldfishPIC *)SlotBase(slot)) // the 32 virtio devices share a goldfish
+#define pic ((volatile struct goldfishPIC *)(SlotBase(slot) + picOffset)) // the 32 virtio devices share a goldfish
 
 // Coexists in a queue with all the Virtio devices on this same board
 static struct SlotIntQElement slotInterrupt = {
 	.sqType = sIQType,
-	.sqPrio = 20, // do before the "backstop"
+	// Before everything else: it only lowers our device's interrupt and
+	// passes on, and Apple's Sonic driver (on the LC PDS card with Ethernet)
+	// claims every interrupt of the slot at priority 200
+	.sqPrio = 250,
 	.sqAddr = CALLIN68K_C_ARG0_GLOBDEF(interrupt),
 };
 
@@ -212,6 +216,15 @@ static void whoami(short refNum) {
 	struct SpBlock sp = {.spSlot=slot, .spID=resNum};
 	SGetSRsrc(&sp);
 	int type = 255 & sp.spDrvrHW; // the last field of "sRsrcType" in the declaration ROM
+
+	// The PIC is at +0 unless the board sResource says otherwise (on the
+	// LC PDS card with Ethernet the SONIC's registers are there)
+	picOffset = 0;
+	struct SpBlock board = {.spSlot=slot, .spID=1/*board sResource*/};
+	if (SRsrcInfo(&board) == noErr) {
+		board.spID = 128; // picOffset
+		if (SReadWord(&board) == noErr) picOffset = board.spResult & 0xffff;
+	}
 
 	// Is this the 1st Block sResource? The 4th?
 	int nth = 0;
