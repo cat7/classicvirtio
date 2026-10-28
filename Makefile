@@ -52,13 +52,13 @@ build/classic/declrom: declrom.s \
 
 # The standalone functions built using different compiler options (PC-relative addressing FYI)
 build/classic/standalone-%: standalone-%.c standalone68k.lds
-	m68k-apple-macos-gcc $(CDEFS) -c -m68040 -O0 -mpcrel -o $@.o $<
+	m68k-apple-macos-gcc $(CDEFS) -c -m68020 -O0 -mpcrel -o $@.o $<
 	m68k-apple-macos-ld --no-warn-rwx-segments -e 0 --script standalone68k.lds -o $@.elf $@.o $(ALLLIBS)
 	m68k-apple-macos-objcopy -O binary -j .text $@.elf $@
 
 # Compile the DRVR code files with an A5 global model
 build/classic/%.o: %.c
-	m68k-apple-macos-gcc $(CDEFS) $(INSTRUMENT) -c -m68040 -Os -msep-data -ffunction-sections -fdata-sections -o $@ $<
+	m68k-apple-macos-gcc $(CDEFS) $(INSTRUMENT) -c -m68020 -Os -msep-data -ffunction-sections -fdata-sections -o $@ $<
 
 # Link each driver into an ELF, which will be included in the declaration ROM
 # This code uses A5-refs (-msep-data) so we cannot use the Retro68 libc, but Interfaces are fine

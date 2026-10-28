@@ -107,9 +107,17 @@ SEBlock.size:
 	.long   20f-.                      /* my length */
 	.long   0x02010000                 /* struct version / 68000 / reserved */
 	.long   4                          /* offset to code (i.e. right here) */
+	/* The code and the drivers run from the ROM at 32-bit addresses.
+	 * In 24-bit mode (always on the Mac II family at this point, or with
+	 * 32-bit addressing off) report a failure: the Slot Manager then
+	 * leaves the card alone for this boot instead of the Mac hanging. */
+	tst.b   0x0cb2                     /* MMU32Bit */
+	bne.s   10f
+	move.w  #-1,2(%a0)                 /* seStatus < 0 */
+	rts
+10:
 	clr.l   %d0
 	move.b  (%a0),%d0                  /* get seSlot */
-	move.b  #12,%d0                    /* HACK for when seSlot is actually incorrect */
 	ror.l   #8,%d0                     /* move to 0F000000 position */
 	add.l   #20f-ROMEND+0xf1000000,%d0 /* tricky delta */
 	move.l  %d0,%a1

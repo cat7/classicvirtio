@@ -23,6 +23,7 @@ Read-only for now.
 #include <Files.h>
 #include <HFSVolumes.h>
 #include <Memory.h>
+#include "physmem.h"
 #include <Traps.h>
 #include <Types.h>
 #include <stdbool.h>

@@ -23,6 +23,7 @@ TODO:
 #include "virtqueue.h"
 
 #include "9p.h"
+#include "physmem.h"
 
 enum {
 	NOTAG = 0,

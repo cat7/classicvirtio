@@ -8,6 +8,7 @@ Bugs:
 */
 
 #include <Memory.h>
+#include "physmem.h"
 
 #include "panic.h"
 
