@@ -556,7 +556,7 @@ static OSErr fsGetVolInfo(struct XVolumeParam *pb) {
 	if (total > 0x7fffffff) total = 0x7fffffff;
 	if (free > 0x7fffffff) free = 0x7fffffff;
 	vcb.vcbNmAlBlks = pb->ioVNmAlBlks = total >> 15;
-	vcb.vcbFreeBks = pb->ioVFrBlk = total >> 15;
+	vcb.vcbFreeBks = pb->ioVFrBlk = free >> 15;
 
 	// Get root dir modification date
 	struct Stat9 stat = {};
