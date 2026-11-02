@@ -1409,10 +1409,20 @@ static bool visName(const char *name) {
 }
 
 static int32_t mactime(int64_t unixtime) {
-	struct MachineLocation loc;
-	ReadLocation(&loc);
-	int32_t tz = loc.u.gmtDelta & 0xffffff;
-	if (tz & 0x800000) tz -= 0x1000000; // sign-extend
+	// ReadLocation reads PRAM, a slow transaction through Cuda/Egret:
+	// read it once a minute, not on every catalog call
+	static int32_t tz;
+	static unsigned long tzTicks;
+	static bool tzValid;
+	unsigned long now = LMGetTicks();
+	if (!tzValid || now - tzTicks >= 60*60) {
+		struct MachineLocation loc;
+		ReadLocation(&loc);
+		tz = loc.u.gmtDelta & 0xffffff;
+		if (tz & 0x800000) tz -= 0x1000000; // sign-extend
+		tzTicks = now;
+		tzValid = true;
+	}
 
 	// Mac epoch = 1904, Unix epoch = 1970 (24107 days)
 	// Mac time is TZ local
