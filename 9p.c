@@ -556,10 +556,15 @@ static int transact(uint8_t cmd, const char *tfmt, const char *rfmt, ...) {
 
 		beenlocked |= (1<<i);
 
-		MemoryBlock mbs[256] = {logiranges[i]};
-		unsigned long extents = 255;
+		// The logical range, then one entry per free buffer and one more
+		// to tell a range that needs too many apart (this is on the stack,
+		// which at boot can be short)
+		long room = bufcnt - (txn + rxn);
+		MemoryBlock mbs[room + 2];
+		mbs[0] = logiranges[i];
+		unsigned long extents = room + 1;
 
-		if (GetPhysical((void *)mbs, &extents) || extents >= 255) {
+		if (GetPhysical((void *)mbs, &extents)) {
 			CLEANUP();
 			panic("cannot get physical memory");
 		}
