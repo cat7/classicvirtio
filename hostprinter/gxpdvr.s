@@ -11,3 +11,6 @@ _start:
 	bra.w   HPFinishSendPage    /* 16 */
 	bra.w   HPWriteData         /* 20 */
 	bra.w   HPRasterDataIn      /* 24 */
+	bra.w   HPDefaultPrinter    /* 28 */
+	bra.w   HPSetupImageData    /* 32 */
+	bra.w   HPDefaultDesktopPrinter /* 36 */

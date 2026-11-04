@@ -10,6 +10,23 @@
 
 typedef struct OpaqueGXJob *gxJob;
 typedef struct OpaqueGXFormat *gxFormat;
+typedef struct OpaqueGXPrinter *gxPrinter;
+typedef struct OpaqueGXPaperType *gxPaperType;
+
+typedef struct {
+	long renderOptions;
+	Fixed hImageRes, vImageRes;
+	short minBandSize, maxBandSize;
+	// and more
+} gxRasterImageDataRec, *gxRasterImageDataPtr, **gxRasterImageDataHdl;
+
+typedef struct {
+	Boolean disableQuality;
+	char padByte;
+	short defaultQuality, currentQuality;   // from 1, best first
+	short qualityCount;
+	char qualityNames[1];                   // packed Pascal strings
+} gxQualityInfo;
 
 typedef struct {
 	Fixed left, top, right, bottom;
@@ -43,6 +60,8 @@ typedef struct {
 
 enum {
 	gxPrintingTagID = -28672,
+	gxQualityTag = 'qual',
+	gxPaperFeedTag = 'feed',
 	gxRGB32Space = 0x0801,
 	chooserInitializeMsg = 11,
 };
@@ -62,6 +81,11 @@ gxJob GXGetJob(void) = {0x203c, 0x0001, 0x0001, 0xabfe};
 pascal Collection GXGetJobCollection(gxJob job) = {0x203c, 0x0000, 0x001d, 0xabfe};
 pascal OSErr GetCollectionItem(Collection c, OSType tag, long id, long *size, void *data)
 	= {0x7009, 0xabf6};
+pascal gxJob GXGetPrinterJob(gxPrinter p) = {0x203c, 0x0000, 0x002a, 0xabfe};
+pascal gxPrinter GXGetJobPrinter(gxJob job) = {0x203c, 0x0000, 0x0029, 0xabfe};
+pascal gxPrinter GXGetJobOutputPrinter(gxJob job) = {0x203c, 0x0000, 0x0028, 0xabfe};
+pascal OSErr AddCollectionItem(Collection c, OSType tag, long id, long size, const void *data)
+	= {0x7008, 0xabf6};
 pascal OSErr GXInitPrinting(void) = {0x203c, 0x0000, 0x0000, 0xabfe};
 pascal OSErr GXExitPrinting(void) = {0x203c, 0x0000, 0x0001, 0xabfe};
 OSErr GXHandleChooserMessage(gxJob *job, StringPtr driverName, long message, long caller,

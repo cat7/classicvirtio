@@ -98,7 +98,10 @@ host printer's papers and margins.
 With QuickDraw GX on, the Chooser shows only GX drivers: use the "Host
 Printer GX" file (`build/classic/HostPrinterGX.bin`) instead, choose it in
 the Chooser and click Create to make its desktop printer. GX draws the pages
-(150 dpi, five paper sizes); the driver sends them the same way.
+at 150 dpi, or 300 dpi with Quality: Best in the Print dialog. The host
+printer's papers that GX lacks become paper type files in the Extensions
+folder when the desktop printer is made; jobs default to manual paper feed,
+which keeps GX from asking for papers its tray does not have.
 
 **68k: requires QEMU with virtio-print-device (cat7/m68k-rom q700 branch)**
 
