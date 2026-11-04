@@ -84,6 +84,25 @@ Disk driver
 	-device virtio-9p-device,fsdev=UNIQUENAME,mount_tag="Macintosh HD"
 	-fsdev local,id=UNIQUENAME,security_model=none,path=/PATH/TO/HOST/FOLDER
 
+Host printer
+============
+
+*Prints on the host's printers, or saves PDFs in a host folder*
+
+Put the "Host Printer" file (`build/classic/HostPrinter.bin`, MacBinary) in
+the Extensions folder and choose "Host Printer" in the Chooser. Pages are
+drawn on the guest at 72, 150 or 300 dpi and sent to the host as pixels;
+QEMU makes them into a PDF and prints it with CUPS. Page Setup lists the
+host printer's papers and margins.
+
+**68k: requires QEMU with virtio-print-device (cat7/m68k-rom q700 branch)**
+
+	-device virtio-print-device                       # the default printer
+	-device virtio-print-device,printer=QUEUE_NAME    # another (lpstat -e)
+	-device virtio-print-device,save-to=/PATH/TO/FOLDER
+
+**PowerPC: not yet**
+
 GPU
 ===
 

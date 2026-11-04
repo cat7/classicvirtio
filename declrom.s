@@ -338,6 +338,11 @@ OSLstEntry resNum, ResourceInput
 .set resNum, resNum+1
 .endr
 
+.rept 1 /* Maximum number of printers, sResource 193 */
+OSLstEntry resNum, ResourcePrint
+.set resNum, resNum+1
+.endr
+
 .ifdef PDS_ETHERNET
 	OSLstEntry 240, ResourceEthernet
 .endif
@@ -522,6 +527,31 @@ ResourceInput:
 	StubDriver VirtioInput, 5$, 6$, 192, 18
 5$:
 	.incbin "build/classic/drvr-input.elf"
+	.align 2
+6$:
+
+ResourcePrint:
+	OSLstEntry sRsrcType, 1$
+	OSLstEntry sRsrcName, 2$
+	OSLstEntry sRsrcDrvrDir, 3$
+	DatLstEntry sRsrcFlags, 2 /* open at start, use 32-bit addressing */
+	DatLstEntry sRsrcHWDevId, 1
+	DatLstEntry endOfList, 0
+1$:
+	.short catCPU
+	.short typeDesk
+	.short drSwMacCPU
+	.short 0x5680
+2$:
+	.asciz "VirtioPrint" /* without a leading dot */
+	.align 2
+3$:
+	OSLstEntry sCPU_68020, 4$
+	DatLstEntry endOfList, 0
+4$:
+	StubDriver VirtioPrint, 5$, 6$, 193, 0x80
+5$:
+	.incbin "build/classic/drvr-print.elf"
 	.align 2
 6$:
 

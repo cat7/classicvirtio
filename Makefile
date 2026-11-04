@@ -4,7 +4,7 @@
 # Build the drivers (PPC and 68k) with:
 #     PATH=Retro68-build/toolchain/bin make
 all: classic ndrv build/test
-classic: build/classic/declrom build/classic/declrom-pds
+classic: build/classic/declrom build/classic/declrom-pds build/classic/HostPrinter.bin
 ndrv: build/ndrv/ndrvloader
 
 # Tell make not to delete the intermediate files
@@ -17,7 +17,7 @@ $(shell mkdir -p build/classic build/ndrv)
 # The supported Virtio devices for each Mac platform (see device-9p.c etc)
 #     "CLASSIC" means a 68k DRVR for a NuBus device under qemu-system-m68k
 #     "NDRV" means a PowerPC NDRV for a PCI device under qemu-system-ppc
-DEVICES_CLASSIC = block 9p input
+DEVICES_CLASSIC = block 9p input print
 DEVICES_NDRV = block 9p input
 
 # And these are the C files that each device-*.c depends on (some are arch-specific)
@@ -78,6 +78,46 @@ build/classic/drvr-%.elf: drvr.lds build/classic/jumpglue.o build/classic/device
 # The DRVR has some assembly code to call through to C
 build/classic/%.o: %.s
 	m68k-apple-macos-as -o $@ $^
+
+########################### HOST PRINTER FILE ###########################
+
+# A printer driver for the Extensions folder ("Host Printer" in the Chooser)
+# that prints through the .VirtioPrint driver of the declaration ROM.
+# Each code resource is linked at two addresses: a difference means code
+# that is not position-independent.
+$(shell mkdir -p build/hostprinter)
+HP_CFLAGS = $(CDEFS) -c -m68020 -Os -mpcrel -ffunction-sections -fdata-sections \
+	-fno-builtin -fno-tree-loop-distribute-patterns
+HP_LD = m68k-apple-macos-ld --no-warn-rwx-segments -e _start --gc-sections --script hostprinter/code.lds
+
+build/hostprinter/%.o: hostprinter/%.c hostprinter/common.h printcall.h
+	m68k-apple-macos-gcc $(HP_CFLAGS) -o $@ $<
+
+build/hostprinter/%-entry.o: hostprinter/%.s hostprinter/entry.inc
+	m68k-apple-macos-as -I hostprinter -o $@ $<
+
+build/hostprinter/%.bin: build/hostprinter/%.elf
+	m68k-apple-macos-objcopy -O binary -j .text $< $@
+	m68k-apple-macos-objcopy -O binary -j .text $(<:.elf=.elf2) $@.2
+	cmp $@ $@.2
+	m68k-apple-macos-objcopy -O binary -j .data $< $@.data
+	test ! -s $@.data
+
+define HP_CODE
+build/hostprinter/$(1).elf: build/hostprinter/$(1)-entry.o $(patsubst %,build/hostprinter/%.o,$(2)) hostprinter/code.lds
+	$$(HP_LD) -o $$@ build/hostprinter/$(1)-entry.o $(patsubst %,build/hostprinter/%.o,$(2))
+	$$(HP_LD) --defsym BASE=0x12340 -o $$(@:.elf=.elf2) build/hostprinter/$(1)-entry.o $(patsubst %,build/hostprinter/%.o,$(2))
+endef
+$(eval $(call HP_CODE,pdef0,doc common))
+$(eval $(call HP_CODE,pdef4,dlg common))
+$(eval $(call HP_CODE,pdef7,gen common))
+$(eval $(call HP_CODE,pack,chooser common))
+$(eval $(call HP_CODE,drvr,))
+
+build/classic/HostPrinter.bin: hostprinter/hostprinter.r hostprinter/icon.r \
+		$(patsubst %,build/hostprinter/%.bin,pdef0 pdef4 pdef7 pack drvr)
+	Rez -I hostprinter -I $(dir $(shell which Rez))../RIncludes -o "build/classic/Host Printer.bin" -t PRER -c hstP hostprinter/hostprinter.r
+	cp "build/classic/Host Printer.bin" $@
 
 ############################# POWERPC NDRV #############################
 
