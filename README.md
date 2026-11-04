@@ -95,6 +95,11 @@ drawn on the guest at 72, 150 or 300 dpi and sent to the host as pixels;
 QEMU makes them into a PDF and prints it with CUPS. Page Setup lists the
 host printer's papers and margins.
 
+With QuickDraw GX on, the Chooser shows only GX drivers: use the "Host
+Printer GX" file (`build/classic/HostPrinterGX.bin`) instead, choose it in
+the Chooser and click Create to make its desktop printer. GX draws the pages
+(150 dpi, five paper sizes); the driver sends them the same way.
+
 **68k: requires QEMU with virtio-print-device (cat7/m68k-rom q700 branch)**
 
 	-device virtio-print-device                       # the default printer

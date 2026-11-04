@@ -4,7 +4,7 @@
 # Build the drivers (PPC and 68k) with:
 #     PATH=Retro68-build/toolchain/bin make
 all: classic ndrv build/test
-classic: build/classic/declrom build/classic/declrom-pds build/classic/HostPrinter.bin
+classic: build/classic/declrom build/classic/declrom-pds build/classic/HostPrinter.bin build/classic/HostPrinterGX.bin
 ndrv: build/ndrv/ndrvloader
 
 # Tell make not to delete the intermediate files
@@ -90,7 +90,7 @@ HP_CFLAGS = $(CDEFS) -c -m68020 -Os -mpcrel -ffunction-sections -fdata-sections 
 	-fno-builtin -fno-tree-loop-distribute-patterns
 HP_LD = m68k-apple-macos-ld --no-warn-rwx-segments -e _start --gc-sections --script hostprinter/code.lds
 
-build/hostprinter/%.o: hostprinter/%.c hostprinter/common.h printcall.h
+build/hostprinter/%.o: hostprinter/%.c hostprinter/common.h hostprinter/gx.h printcall.h
 	m68k-apple-macos-gcc $(HP_CFLAGS) -o $@ $<
 
 build/hostprinter/%-entry.o: hostprinter/%.s hostprinter/entry.inc
@@ -113,11 +113,20 @@ $(eval $(call HP_CODE,pdef4,dlg common))
 $(eval $(call HP_CODE,pdef7,gen common))
 $(eval $(call HP_CODE,pack,chooser common))
 $(eval $(call HP_CODE,drvr,))
+$(eval $(call HP_CODE,gxpdvr,gxdriver common))
+$(eval $(call HP_CODE,gxpack,gxchooser common))
+$(eval $(call HP_CODE,gxldef,gxldef common))
 
 build/classic/HostPrinter.bin: hostprinter/hostprinter.r hostprinter/icon.r \
 		$(patsubst %,build/hostprinter/%.bin,pdef0 pdef4 pdef7 pack drvr)
 	Rez -I hostprinter -I $(dir $(shell which Rez))../RIncludes -o "build/classic/Host Printer.bin" -t PRER -c hstP hostprinter/hostprinter.r
 	cp "build/classic/Host Printer.bin" $@
+
+# The same for QuickDraw GX, which shows only GX drivers in the Chooser
+build/classic/HostPrinterGX.bin: hostprinter/hostprintergx.r hostprinter/gxres.r hostprinter/icon.r \
+		$(patsubst %,build/hostprinter/%.bin,gxpdvr gxpack gxldef)
+	Rez -I hostprinter -I $(dir $(shell which Rez))../RIncludes -o "build/classic/Host Printer GX.bin" -t pdvr -c hstG hostprinter/hostprintergx.r
+	cp "build/classic/Host Printer GX.bin" $@
 
 ############################# POWERPC NDRV #############################
 
