@@ -28,32 +28,7 @@ struct Job {
 	long paperW, paperH;        // pixels
 	long offX, offY;            // where the page area is on the paper
 	long mediaW, mediaH;        // 1/100 pt
-	long rows;                  // rows sent of this page
-	long stride, chunkMax, chunkRows;
-	char *chunk;
-	Handle chunkHandle;         // the chunk, in temporary memory if there was some
 };
-
-static void freeChunk(struct Job *j) {
-	if (j->chunkHandle) DisposeHandle(j->chunkHandle);
-	else if (j->chunk) DisposePtr(j->chunk);
-	j->chunkHandle = NULL;
-	j->chunk = NULL;
-}
-
-// The background printer's partition is small: the rows wait outside it
-static Boolean allocChunk(struct Job *j, long size) {
-	OSErr err;
-	freeChunk(j);
-	j->chunkHandle = TempNewHandle(size, &err);
-	if (j->chunkHandle) {
-		HLock(j->chunkHandle);
-		j->chunk = *j->chunkHandle;
-	} else {
-		j->chunk = NewPtr(size);
-	}
-	return j->chunk != NULL;
-}
 
 static struct Job *job(void) {
 	return GXGetInstanceContext();
@@ -81,33 +56,6 @@ static long jobDPI(void) {
 static void call(struct Job *j, struct PrintCall *c) {
 	HostCall(j->ref, c);
 	if (c->status != kPrintOK) j->failed = true;
-}
-
-static void flush(struct Job *j) {
-	struct PrintCall c;
-	if (!j->chunkRows || j->failed) return;
-	memset(&c, 0, sizeof c);
-	c.op = kPrintBand;
-	c.a[0] = j->chunkRows;
-	c.a[1] = j->stride;
-	c.data = j->chunk;
-	c.datalen = j->chunkRows * j->stride;
-	call(j, &c);
-	j->chunkRows = 0;
-}
-
-// One row of the paper: pixels at the page area's left, or white
-static void addRow(struct Job *j, const char *pixels, long width) {
-	char *row;
-	if (j->rows >= j->paperH || j->failed) return;
-	row = j->chunk + j->chunkRows * j->stride;
-	memset(row, 0xff, j->stride);
-	if (pixels) {
-		if (width > j->paperW - j->offX) width = j->paperW - j->offX;
-		if (width > 0) memcpy(row + j->offX * 4, pixels, width * 4);
-	}
-	j->rows++;
-	if (++j->chunkRows == j->chunkMax) flush(j);
 }
 
 // The job starts with the connection: StartJob and FinishJob belong to the
@@ -147,7 +95,6 @@ OSErr HPCloseConnection(void) {
 		c.op = j->failed ? kPrintAbort : kPrintEndJob;
 		HostCall(j->ref, &c);
 		if (c.status != kPrintOK && !j->failed) err = kJobErr;
-		freeChunk(j);
 		DisposePtr((Ptr)j);
 		GXSetInstanceContext(NULL);
 	}
@@ -172,17 +119,6 @@ OSErr HPStartSendPage(gxFormat format) {
 	j->offY = px(page.top - paper.top, j->dpi);
 	j->mediaW = hpt(paper.right - paper.left);
 	j->mediaH = hpt(paper.bottom - paper.top);
-	j->rows = 0;
-	j->chunkRows = 0;
-
-	if (j->stride != j->paperW * 4 || !j->chunk) {
-		j->stride = j->paperW * 4;
-		j->chunkMax = PRINT_MAX_DATA / j->stride;
-		if (!allocChunk(j, j->chunkMax * j->stride)) {
-			j->failed = true;
-			return memFullErr;
-		}
-	}
 
 	memset(&c, 0, sizeof c);
 	c.op = kPrintBeginPage;
@@ -199,15 +135,17 @@ OSErr HPFinishSendPage(void) {
 	struct PrintCall c;
 
 	if (!j || j->failed) return kJobErr;
-	flush(j);
 	memset(&c, 0, sizeof c);
 	c.op = kPrintEndPage;
 	call(j, &c);
 	return j->failed ? kJobErr : noErr;
 }
 
+// The band goes to the host as it is, in the background printer's memory,
+// which has little to spare: the host puts it in place on the paper
 OSErr HPRasterDataIn(gxOffscreenHdl offscreen, gxRectangle *band, gxRectangle *dirty) {
 	struct Job *j = job();
+	struct PrintCall c;
 	if (!j || j->failed) return kJobErr;
 
 	gxBitmap *bits = &(**offscreen).thePlanes[0].theBits;
@@ -215,10 +153,21 @@ OSErr HPRasterDataIn(gxOffscreenHdl offscreen, gxRectangle *band, gxRectangle *d
 	long bottom = (band->bottom + 0x8000) >> 16;
 	long n = bottom - top;
 	if (n > bits->height) n = bits->height;
+	long per = PRINT_MAX_DATA / bits->rowBytes;
+	if (per < 1) return kJobErr;
 
-	while (j->rows < j->offY + top && !j->failed) addRow(j, NULL, 0);
-	for (long r = 0; r < n && !j->failed; r++) {
-		addRow(j, bits->image + r * bits->rowBytes, bits->width);
+	for (long r = 0; r < n && !j->failed; r += per) {
+		long k = n - r < per ? n - r : per;
+		memset(&c, 0, sizeof c);
+		c.op = kPrintBand;
+		c.a[0] = k;
+		c.a[1] = bits->rowBytes;
+		c.a[2] = j->offX;
+		c.a[3] = bits->width;
+		c.a[4] = j->offY + top + r + 1;
+		c.data = bits->image + r * bits->rowBytes;
+		c.datalen = k * bits->rowBytes;
+		call(j, &c);
 	}
 	return j->failed ? kJobErr : noErr;
 }

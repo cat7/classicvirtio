@@ -15,7 +15,8 @@ enum {
 	kPrintMedia = 1,      // a0 index -> payload: name[64]
 	kPrintBeginJob = 2,   // a0 copies, data: title (C string)
 	kPrintBeginPage = 3,  // a0 width px, a1 height px, a2 w, a3 h (1/100 pt)
-	kPrintBand = 4,       // a0 rows, a1 bytes per row, data: the rows
+	kPrintBand = 4,       // a0 rows, a1 bytes per row, data: the rows;
+	                      // a2 x, a3 pixels (0: all), a4 row + 1 (0: next)
 	kPrintEndPage = 5,
 	kPrintEndJob = 6,     // -> payload: message[128]
 	kPrintAbort = 7,
